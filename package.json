@@ -1,0 +1,9 @@
+{
+    "name" : "noonapp",
+    "description" : "REST api for the noonapp application",
+    "version" : "0.0.1",
+    "private" : true,
+    "dependencies" : {
+        "express" : "4.x"
+    }
+}
