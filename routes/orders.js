@@ -1,3 +1,8 @@
+var Client = require('node-rest-client').Client;
+
+var client = new Client();
+
+
 var mysql = require('mysql');
 
 var connection = mysql.createConnection({
@@ -92,4 +97,79 @@ exports.getDelTimeAndPrice = function(req, res) {
     });
 
 
+}
+
+exports.submitOrder = function(req, res) {
+    // check the validity of the user
+    if(!req.user.validity) {
+        res.status(401).send({error : "invalid user"});
+    } else {
+        
+        var jBody = req.body;
+        
+        var item_count = jBody.item_count;
+        var item_category = jBody.item_category;
+        if(item_count == undefined || item_count == null || item_category == undefined || item_category == null) {
+            res.status(400).send({error : "invalid body"});
+        } else {
+            // check the availability of the product
+            connection.query('SELECT * FROM products WHERE id = ?', item_category, function(err, rows, fields) {
+                if(err) {
+                    res.status(400).send({error : "item doesn't exist or something wrong with the databse"});
+                } else {
+                    if(!rows[0].availability) {
+                        res.status(400).send({error : "item not available"});
+                    } else {
+                        // TODO put a limit for the item count
+
+                        // store the order in the database
+                        var orderValues = {};
+
+                        orderValues.item_category = item_category;
+                        orderValues.item_count = item_count;
+                        orderValues.customer_id = req.user.id;
+                        var d = new Date();
+                        orderValues.order_time = d.getTime();
+                        orderValues.sending_status = false;
+                        orderValues.delivery_status = false;
+                        // get the dtandp
+                        try {
+                            var args = {
+                                data : {
+                                    item_category : req.body.item_category,
+                                    item_count : req.body.item_count
+                                },
+                                headers : {"Content-Type" : "application/json"}
+                            }
+
+                            client.post("http://localhost:3000/orders/dtandp", args, function(data, response) {
+                                var d = JSON.parse(data); 
+                                orderValues.p_delivery_time = d.delivery_time;
+                                orderValues.total_price = d.price;
+                                
+                                connection.query("INSERT INTO orders SET ?", orderValues, function(err, result) {
+                                    if(err) {
+                                        res.status(500).send();
+                                    } else {
+                                        res.status(200).send();
+                                    }
+                                });   
+                            });
+                        } catch(e) {
+                            console.log(e);
+                        }
+/*
+                        connection.query("INSERT INTO orders SET ?", orderValues, function(err, result) {
+                            if(err) {
+                                res.status(500).send();
+                            } else {
+                                res.status(200).send();
+                            }
+                        });
+*/
+                    }
+                }
+            });
+        }
+    }
 }
