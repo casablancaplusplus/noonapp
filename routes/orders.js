@@ -9,8 +9,8 @@ var connection = mysql.createConnection({
     host : 'localhost',
     user : 'root',
     password : 'C0nsistency4g00d',
-    database : 'noonappDb',
-    debug : true
+    database : 'noonappDb'//,
+    //debug : true
 });
 
 /* connect
@@ -20,83 +20,65 @@ connection.connect();
 
 
 exports.getDelTimeAndPrice = function(req, res) {
-    var jRes = req.body;
-    // response sent indicator
-    var responseSent = false;
+    var body = req.body;
+    
+    var delivery_time = 1;
+    var price = 0;
+    // make sure every thing is there in the body
+    if(body.item_category == undefined || body.item_count == undefined || body.customer_id == undefined) {
+        console.log("body error"); 
+        res.status(400).send({error : "Wrong body"});
+    } else {
+        // fetch the product using the item category
+        connection.query("SELECT * FROM products WHERE id = ?", body.item_category, function(err, rows, fields) {
+            var pRow = rows[0];
+            if(err || pRow == undefined || !pRow.availability) {
+                console.log(err + "pRow error");
+                res.status(404).send();
+            } else {
+                // validate the item count
+                if(body.item_count < pRow.item_count_floor || body.item_count > pRow.item_count_max) {
+                    console.log("item count error");
+                    res.status(400).send({error : "wrong item_count"});
+                } else {
+                    // add each items delay
+                    delivery_time += pRow.each_item_delay*body.item_count;
 
-    var responseObj = {};
-    responseObj.delivery_time = 1;
-    // validate the fields
-    // check the category
-    var cat = jRes.item_category;
-    if((!cat || cat == null) && !responseSent) {
-        res.status(400).send({error : 'no item_category was set'});
-        responseSent = true;
-    }
-    // dbug
-    console.log("category : " + cat);
+                    // fetch the user's mantaghe
+                    connection.query("SELECT mantaghe FROM customer WHERE id = ?", body.customer_id, function(err, rows, fields) {
+                        var cRow = rows[0];
+                        if(err || cRow == undefined) {
+                            console.log(err + "cRow error");
+                            res.status(404).send();
+                        } else {
+                            // fetch the mantaghe delay
+                            connection.query('SELECT delivery_delay FROM manategh WHERE name = ?', cRow.mantaghe, function(err, rows, fields) {
+                                var mRow = rows[0];
+                                if(err || mRow == undefined) {
+                                    console.log(err);
+                                    res.status(500).send();
+                                } else {
+                                    // add the mantaghe delay
+                                    delivery_time += mRow.delivery_delay;
 
-    // check the item's count
-    var count = jRes.item_count;
-    if((!count || count == null || count < 4) && !responseSent) {
-        res.status(400).send({error : 'item_count not sent or invalid'});
-        responseSent = true;
-    }
-    //dbug
-    console.log("count : " + count);
+                                    // calculate the price
+                                    price += body.item_count*pRow.nerkh;
 
-    // fetch the item category fields from the database
-    connection.query('SELECT * FROM products WHERE id = ?', cat, function(err, rows, fields) {
-        if(err) {
-            console.log(err.message);
-            if(!responseSent) {
-                res.status(500).send({error : 'product probably does not exist'});
-                responseSent = true;
-            }
-        } else {
-            if(rows[0] == undefined && !responseSent) 
-                {
-                    res.status(500).send({error : 'product probably does not exist'});
-                    responseSent = true;
+                                    // send the response back
+                                    res.status(200).send({
+                                        delivery_time : delivery_time,
+                                        price : price
+                                    });
+                                }
+                            });
+                        }
+                    });
+
+
                 }
-            
-            // check availability
-            var theRow = rows[0];
-            if((theRow.availability == false || theRow.availability == 0) && !responseSent) {
-                res.status(400).send({error : 'product is not available'});
-                responseSent = true;
             }
-            //dbug
-            console.log(typeof(fields));
-            console.log("THE HELLLLLLLLLLLLLL : " + rows[0]);
-
-            // calculate the price
-            responseObj.price = theRow.nerkh * count;
-            // calculate some of the delay
-            responseObj.delivery_time += count * theRow.each_item_delay;
-        }
-    });
-
-    // fetch the delays based on the customer's mantaghe
-    connection.query('SELECT * FROM delivery_delays WHERE id = ?', 1, function(err, rows, fields) {
-        if(err) {
-            console.log(err.message);
-            if(!responseSent) { 
-                res.status(500).send({error : 'something went wrong with the delays table'});
-                responseSent = true;
-
-             }
-        }
-        // mantaghe delivery delay
-        var theRow = rows[0];
-        responseObj.delivery_time += theRow.delay;
-        console.log("delayyyyyyyyyyyyyy : " + rows[0].title);
-   
-        if(!responseSent)
-            res.status(200).send(responseObj);
-    });
-
-
+        });
+    }
 }
 
 exports.submitOrder = function(req, res) {
@@ -137,7 +119,8 @@ exports.submitOrder = function(req, res) {
                             var args = {
                                 data : {
                                     item_category : req.body.item_category,
-                                    item_count : req.body.item_count
+                                    item_count : req.body.item_count,
+                                    customer_id : req.user.id
                                 },
                                 headers : {"Content-Type" : "application/json"}
                             }
@@ -171,5 +154,148 @@ exports.submitOrder = function(req, res) {
                 }
             });
         }
+    }
+}
+
+exports.getOrders = function(req, res) {
+    // make sure its an operator
+    if(req.user.role != 'OPERATOR') res.status(401).send();
+    else {
+        var limit = 10;
+        var min_id = 0;
+        var sending_status = 0;
+        var delivery_status = 0;
+        //var response = [];
+
+        // parse the delivery status
+        var reqDelStatus = req.query.delivery_status;
+        if(reqDelStatus != undefined || reqDelStatus != null) {
+            if(reqDelStatus == 0) sending_status = 0;
+            else if(reqDelStatus == 1) sending_status = 1;
+            else if(reqDelStatus == 2) {sending_status = 1; delivery_status = 1;}
+        }
+
+        // parse the limit
+        if(req.query.limit != undefined && req.query.limit != null && req.query.limit > 0 && req.query.limit < 15) limit = parseInt(req.query.limit);
+
+        // parse the min_id
+        if(req.query.min_id != undefined && req.query.min_id != null) min_id = parseInt(req.query.min_id);
+        
+        // fetch the order based on the url query
+        connection.query(
+                'SELECT orders.id, orders.sending_status, orders.delivery_status, customer.mantaghe, products.product_name FROM products INNER JOIN (orders INNER JOIN customer ON orders.customer_id = customer.id) ON orders.item_category = products.id WHERE orders.id > ? AND orders.sending_status = ? AND orders.delivery_status = ?   LIMIT ?', 
+                [min_id, sending_status, delivery_status, limit], function(err, rows, fields) {
+                    if(err) {
+                        console.log(err);
+                        res.status(500).send();
+                    } else if(rows.length == 0) {
+                        res.status(404).send({error : "no records found"});
+                    } else {
+                        res.status(200).send(rows);
+                    }
+                    
+                });
+    }
+}
+
+exports.getOrder = function(req, res) {
+    // make sure its an operator
+    if(req.user.role != 'OPERATOR') res.status(401).send();
+    else if(req.params.order_id == undefined || req.params.order_id < 1 || req.params.order_id == null) res.status(400).send();
+    else {
+        // perform the query using the order id
+        connection.query('SELECT products.product_name, orders.item_count, orders.customer_id, orders.order_time, orders.p_delivery_time, orders.delivery_time, orders.sending_status, orders.delivery_status, orders.total_price, customer.mantaghe, customer.address FROM products INNER JOIN (orders INNER JOIN customer ON orders.customer_id = customer.id) ON orders.item_category = products.id WHERE orders.id = ?', req.params.order_id, function(err, rows, fields) {
+            if(err) {
+                console.log(err);
+                res.status(500).send();
+            } else if (rows[0] == undefined) {
+                res.status(404).send();
+            } else {
+                res.status(200).send(rows[0]);
+            }
+        })
+    }
+}
+
+exports.deleteOrder = function(req, res) {
+    if(req.user.role != 'OPERATOR') res.status(401).send();
+    else if(req.params.order_id == undefined || req.params.order_id < 1 || req.params.order_id == null) res.status(400).send();
+    else {
+        // delete the order
+        connection.query('DELETE FROM orders WHERE id = ?', req.params.order_id, function(err, result) {
+            if(err) {
+                console.log(err);
+                res.status(500).send();
+            } else {
+                res.status(200).send();
+            }
+        })
+    }
+}
+
+exports.updateSendingStatus = function(req, res) {
+    var jBody = req.body;
+    if(req.user.role != 'OPERATOR') res.status(401).send();
+    else if(req.params.order_id == undefined || req.params.order_id < 1 || req.params.order_id == null) {
+        console.log("order_id error");
+        res.status(400).send();
+    }
+    else if(jBody == undefined || jBody == null || jBody.sending_status < 0 || jBody.sending_status > 1) {
+        console.log("sending_status error" +  req.body.sending_status);
+        res.status(400).send();
+    }
+    else {
+        // update the sending status
+        connection.query('UPDATE orders SET sending_status = ? WHERE id = ?', [jBody.sending_status,  req.params.order_id], function(err, result) {
+            if(err) {
+                console.log(err);
+                res.status(500).send();
+            } else {
+                res.status(200).send();
+            }
+        })
+    }
+}
+
+exports.updateDeliveryStatus = function(req, res) {
+    var jBody = req.body;
+    if(req.user.role != 'OPERATOR') res.status(401).send();
+    else if(req.params.order_id == undefined || req.params.order_id < 1 || req.params.order_id == null) {
+        console.log("order_id error");
+        res.status(400).send();
+    }
+    else if(jBody == undefined || jBody == null || jBody.delivery_status < 0 || jBody.delivery_status > 1) {
+        console.log("delivery_status error" +  req.body.delivery_status);
+        res.status(400).send();
+    } else {
+        // delivery time
+        var d = new Date();
+        // update the delivery status only if the sending status is true
+        if(jBody.delivery_status == 1) {
+            connection.query('UPDATE orders SET delivery_status = ?, delivery_time = ? WHERE id = ? AND sending_status = 1', [jBody.delivery_status, d.getTime(), req.params.order_id], function(err, result) {
+                if(err) {
+                    console.log(err);
+                    res.status(500).send();
+                } else if(result.changedRows == 0) {
+                    console.log("No row was changed");
+                    res.status(400).send();
+                } else {
+                    res.status(200).send();
+                }
+            })
+        } else {
+            connection.query('UPDATE orders SET delivery_status = ?, delivery_status = ? WHERE id = ?', [jBody.delivery_status, d.getTime(),  req.params.order_id], function(err, result) {
+                if(err) {
+                    console.log(err);
+                    res.status(500).send();
+                } else if(result.changedRows == 0) {
+                    console.log("No row was changed");
+                    res.status(400).send();
+                } else {
+                    res.status(200).send();
+                }
+            })
+        }
+        
     }
 }

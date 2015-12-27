@@ -16,7 +16,10 @@ exports.getProductNerkh = function(req, res) {
             console.log(err);
             res.status(500).send();
         } else {
-            res.status(200).json({nerkh : rows[0].nerkh});
+            console.log(req.params.product_id);
+            if(rows[0] == undefined) res.status(400).send();
+            else 
+                res.status(200).json({nerkh : rows[0].nerkh});
         }
     });
 }
@@ -30,7 +33,7 @@ exports.getAvailableProducts = function(req, res) {
         } else {
             var jRes = [];
             for(var i = 0; i<rows.length; i++) {
-                jRes.push({id:rows[i].id, name:rows[i].product_name});
+                jRes.push(rows[i]);
             }
             res.status(200).send(jRes);
 

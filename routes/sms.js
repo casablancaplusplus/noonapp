@@ -1,6 +1,11 @@
+// install this module useing "$ npm install node-rest-client" before using
 var Client = require('node-rest-client').Client;
 
 var client = new Client();
+
+client.on('error', function(err) {
+    console.log('something went wrong on the client', err);
+});
 
 
 exports.sendVerificationCode = function(receptor, verificationCode) {
@@ -10,13 +15,13 @@ exports.sendVerificationCode = function(receptor, verificationCode) {
     var message='noonapp verification code : ' + verificationCode;
     var url = "https://api.kavenegar.com/v1/"+apiKey+"/sms/send.json?receptor="+receptor+"&sender="+sender+"&message="+message;
 
-    try {
     // consume the service
     client.get(url, function(data, response) {
+        // parsed response body 
         console.log(data);
+        // raw response
         console.log(response);
-    }); 
-    } catch(e) {
-        
-    }
+    }).on('error', function(err) {
+        console.log('something went wrong on the request', err);
+    });
 }

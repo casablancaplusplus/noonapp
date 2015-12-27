@@ -52,6 +52,8 @@ if(app.get('env')) {
     app.use(require('morgan')('combined'));
 }
 
+/* orders */
+
 
 // get an order's delivery time and price
 app.post('/orders/dtandp', bodyParser.json(), orders.getDelTimeAndPrice);
@@ -59,14 +61,33 @@ app.post('/orders/dtandp', bodyParser.json(), orders.getDelTimeAndPrice);
 // submit an order
 app.post('/orders', passport.authenticate('bearer', {session:false}), orders.submitOrder );
 
+// retrieve orders list based on some parameters
+// the customer role should be OPERATOR in order be able to 
+// fetch the orders list
+app.get('/orders', passport.authenticate('bearer', {session:false}), orders.getOrders);
 
+// fetch a single order
+app.get('/orders/:order_id', passport.authenticate('bearer', {session:false}), orders.getOrder);
 
+// delete an order
+app.delete('/orders/:order_id', passport.authenticate('bearer', {session:false}), orders.deleteOrder);
+
+// update sending status
+app.put('/orders/:order_id/sending_status', passport.authenticate('bearer', {session:false}), orders.updateSendingStatus);
+
+// udpate delivery status
+app.put('/orders/:order_id/delivery_status', passport.authenticate('bearer', {session:false}), orders.updateDeliveryStatus);
+
+/* customers */
 
 // register a new customer
 app.post('/customers', bodyParser.json(), customers.registerNewCustomer);
 
 // retrieve an access token
 app.post('/tokens/access_token', bodyParser.json(), tokens.getAccessToken);
+// request a new verification code
+app.post('/tokens/verification_code', bodyParser.json(), tokens.getNewVerificationCode);
+
 
 // Fetch the manategh
 app.get('/manategh', manategh.fetchManateghList);

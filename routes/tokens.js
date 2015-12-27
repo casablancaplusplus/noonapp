@@ -1,5 +1,6 @@
 var mysql = require('mysql');
 var crypto = require('crypto');
+var smsSender = require('./sms');
 
 var connection = mysql.createConnection({
     host : 'localhost',
@@ -57,7 +58,7 @@ exports.getAccessToken = function(req, res) {
                                 console.log(err);
                                 res.status(500).send();
                             } else {
-                                res.status(200).send({access_token : hash});
+                                res.status(200).send({access_token : hash, customer_id : theRow.customer_id});
                             }
                         });
                     }
@@ -70,5 +71,34 @@ exports.getAccessToken = function(req, res) {
     }
     } else {
         res.status(400).send({error : "no verification_token was set"});
+    }
+}
+
+exports.getNewVerificationCode = function(req, res) {
+    var jBody = req.body;
+
+    if(jBody.verification_token == undefined || jBody.new_phone_number == undefined) {
+        res.status(400).send();
+    } else {
+        // fetch the tokens record with the jBody verificaion token
+        connection.query('SELECT * FROM tokens WHERE verification_token = ?', jBody.verification_token, function(err, rows, fields) {
+            if(err || rows[0] == undefined) {
+                console.log("ver token : " + jBody.verification_token);
+                console.log(err + "the point where the tokens record is fetched");
+                res.status(500).send();
+            } else {
+                // update the customer using the customer_id field in the rows
+                connection.query('UPDATE customer SET phone_number = ? WHERE id = ?', [jBody.new_phone_number, rows[0].customer_id], function(err, result) {
+                    if(err) {
+                        console.log(err+ " the point where the customer is fetched");
+                        res.status(500).send();
+                    } else {
+                        // send the verification code to the customer via sms
+                        smsSender.sendVerificationCode(jBody.new_phone_number, rows[0].verification_code);
+                        res.status(200).send();
+                    }
+                })   
+            }
+        })
     }
 }
